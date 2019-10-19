@@ -1,9 +1,9 @@
 import shutil
 import os
 
-default_destination = "C:\\Users\\Stodg\\Dropbox\\Windows Desktop Images"
 
 default_user="Stodg"
+default_destination = "C:\\Users\\"+ default_user +"\\Dropbox\\Windows Desktop Images"
 
 min_kb = 200
 
@@ -20,7 +20,7 @@ def get_images(user=default_user, destination=default_destination):
   dest_files = os.listdir(destination)
   for file in dest_files:
     file_location = destination+"\\"+file
-    if not file.endswith('.jpg'):
+    if not file.endswith('.jpg') and os.path.isfile(file_location):
       os.rename(file_location, file_location+'.jpg')
 
 
