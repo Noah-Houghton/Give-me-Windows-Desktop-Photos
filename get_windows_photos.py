@@ -14,7 +14,7 @@ min_kb = 200
 def get_images():
   users = cfg['users']
   for user in users:
-    destination = cfg['destination_start'] + user + cfg['destination_end']
+    destination = cfg['destination']
     source = "C:\\Users\\" + user + "\\AppData\\Local\\Packages\\Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy\\LocalState\\Assets"
     cur_dest_files = os.listdir(destination)
     # copy image files
@@ -39,8 +39,9 @@ def get_images():
         # if the renamed file does not already exist in our permanent folder, copy it there
         if name not in cur_dest_files:
             shutil.copy(temp_dir + "\\" + name, destination)
-    print('All images named and copied - opening destination folder for user {}!'.format(user))
-    os.startfile(os.path.realpath(destination))
+    print('All images named and copied for user {}'.format(user))
+  print('opening destination folder!')
+  os.startfile(os.path.realpath(destination))
 
 HEADERS = {
             'Accept': ('text/html,application/xhtml+xml,application/'

@@ -1,4 +1,3 @@
 users:
   - 'stodg'
-destination_start: "C:\\Users\\"
-destination_end: "\\Dropbox\\Windows Desktop Images"
+destination: "C:\\Users\\stodg\\Dropbox\\Windows Desktop Images"
