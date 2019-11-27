@@ -1,4 +1,5 @@
 import shutil
+import filecmp
 import os
 import requests
 from bs4 import BeautifulSoup
@@ -13,10 +14,17 @@ min_kb = 200
 
 def get_images():
   users = cfg['users']
+  keep_vertical = cfg['keep_vertical']
   for user in users:
-    destination = cfg['destination']
+    horizontal_destination = cfg['destination_horizontal']
+    if keep_vertical:
+      vertical_destination = cfg['destination_vertical']
+    file_destination = ''
     source = "C:\\Users\\" + user + "\\AppData\\Local\\Packages\\Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy\\LocalState\\Assets"
-    cur_dest_files = os.listdir(destination)
+    # get list of file sizes in destination folder
+    dest_files_data = [[horizontal_destination + "\\" + file, os.stat(horizontal_destination + "\\" + file).st_size] for file in os.listdir(horizontal_destination)]
+    if keep_vertical:
+      dest_files_data += [[vertical_destination + "\\" + file, os.stat(vertical_destination + "\\" + file).st_size] for file in os.listdir(vertical_destination)]
     # copy image files
     with tempfile.TemporaryDirectory() as temp_dir:
       # first, copy all files from the desktop to a temporary folder for processing and sorting
@@ -28,20 +36,43 @@ def get_images():
       # rename all temporary files to their proper names
       for file in os.listdir(temp_dir):
         file_location = temp_dir+"\\"+file
+        # if the renamed file does not already exist in our permanent folder, copy it there
+        filesize = os.stat(file_location).st_size
+        is_duplicate = False
+        epsilon = .1
+        for file_data in dest_files_data:
+          # if file is same size as one in destination folder
+          if file_data[1] == filesize or (file_data[1] >= filesize * (1-epsilon) and file_data[1] <= filesize * (1+epsilon)):
+            # if files are equal, break
+            if filecmp.cmp(file_location, file_data[0]):
+              is_duplicate = True
+              print('Duplicate found! Moving to next file...')
+              break
+        # if the file is a duplicate, skip it
+        if is_duplicate:
+          continue
         img_size = getDimension(file_location)
         orientation = ''
         if (img_size[0] == 1920):
           orientation = 'horizontal'
-        else:
+          file_destination = horizontal_destination
+        elif keep_vertical:
           orientation = 'vertical'
-        name = get_image_name(file_location).replace(' ', '_')+ "_" + orientation +'.jpg'
+          file_destination = vertical_destination
+        identifier = ''
+        if keep_vertical and orientation == 'vertical':
+          identifier = '_vert-tag'
+        name = get_image_name(file_location) + identifier + '.jpg'
         os.rename(file_location, temp_dir+"\\"+name)
-        # if the renamed file does not already exist in our permanent folder, copy it there
-        if name not in cur_dest_files:
-            shutil.copy(temp_dir + "\\" + name, destination)
+        shutil.copy(temp_dir + "\\" + name, file_destination)
+        print('New image added to ' + orientation + ' destination folder')
     print('All images named and copied for user {}'.format(user))
-  print('opening destination folder!')
-  os.startfile(os.path.realpath(destination))
+    # remove vertical identifier tag in the vertical destination folder
+    for v_file in os.listdir(vertical_destination):
+      if v_file[-13:] == "_vert-tag.jpg":
+        os.rename(vertical_destination+"\\"+v_file, vertical_destination+ "\\" + v_file[0:-13] + ".jpg")
+  print('opening horizontal destination folder!')
+  os.startfile(os.path.realpath(horizontal_destination))
 
 HEADERS = {
             'Accept': ('text/html,application/xhtml+xml,application/'
@@ -54,11 +85,14 @@ HEADERS = {
             }
 
 def get_image_name(filePath):
+  print('Searching for image title...')
   searchUrl = 'http://www.google.com/searchbyimage/upload'
   multipart = {'encoded_image': (filePath, open(filePath, 'rb')), 'image_content': ''}
   response = requests.post(searchUrl, files=multipart, allow_redirects=False)
+  print('Parsing response...')
   fetchUrl = response.headers['Location']
   soup = BeautifulSoup(requests.get(fetchUrl, headers=HEADERS).text, features='html.parser')
+  print('Response parsed! Naming file...')
   return soup.find('input', title="Search").get('value').title()
 
 def getDimension(filename):
