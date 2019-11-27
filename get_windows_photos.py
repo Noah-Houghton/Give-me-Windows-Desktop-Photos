@@ -12,6 +12,8 @@ with open("config.yml", 'r') as ymlfile:
 
 min_kb = 200
 
+rename_images = cfg['rename_images']
+
 def get_images():
   users = cfg['users']
   keep_vertical = cfg['keep_vertical']
@@ -62,7 +64,10 @@ def get_images():
         identifier = ''
         if keep_vertical and orientation == 'vertical':
           identifier = '_vert-tag'
-        name = get_image_name(file_location) + identifier + '.jpg'
+        if rename_images:
+          name = get_image_name(file_location) + identifier + '.jpg'
+        else:
+          name = file + '.jpg'
         os.rename(file_location, temp_dir+"\\"+name)
         shutil.copy(temp_dir + "\\" + name, file_destination)
         print('New image added to ' + orientation + ' destination folder')

@@ -1,5 +1,6 @@
 users:
   - 'stodg'
 keep_vertical: True
+rename_images: True
 destination_horizontal: "C:\\Users\\stodg\\Dropbox\\Windows Desktop Images"
 destination_vertical: "C:\\Users\\stodg\\Dropbox\\Windows Desktop Images\\Vertical"
