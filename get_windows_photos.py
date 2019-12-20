@@ -75,7 +75,10 @@ def get_images():
     # remove vertical identifier tag in the vertical destination folder
     for v_file in os.listdir(vertical_destination):
       if v_file[-13:] == "_vert-tag.jpg":
-        os.rename(vertical_destination+"\\"+v_file, vertical_destination+ "\\" + v_file[0:-13] + ".jpg")
+        try:
+          os.rename(vertical_destination+"\\"+v_file, vertical_destination+ "\\" + v_file[0:-13] + ".jpg")
+        except FileExistsError:
+          os.remove(vertical_destination + "\\" + v_file)
   print('opening horizontal destination folder!')
   os.startfile(os.path.realpath(horizontal_destination))
 
