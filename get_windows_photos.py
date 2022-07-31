@@ -10,9 +10,8 @@ from yaml import CLoader as Loader
 with open("config.yml", 'r') as ymlfile:
     cfg = yaml.load(ymlfile, Loader=Loader)
 
-min_kb = 200
-
-rename_images = cfg['rename_images']
+# minimum number of kilobytes a file must be before it is picked up by the scraper
+MIN_KB = 200
 
 def get_images():
   users = cfg['users']
@@ -22,34 +21,24 @@ def get_images():
     if keep_vertical:
       vertical_destination = cfg['destination_vertical']
     file_destination = ''
-    source = "C:\\Users\\" + user + "\\AppData\\Local\\Packages\\Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy\\LocalState\\Assets"
+    source = f"C:\\Users\\{user}\\AppData\\Local\\Packages\\Microsoft.Windows.ContentDeliveryManager_cw5n1h2txyewy\\LocalState\\Assets"
     # get list of file sizes in destination folder
-    dest_files_data = [[horizontal_destination + "\\" + file, os.stat(horizontal_destination + "\\" + file).st_size] for file in os.listdir(horizontal_destination)]
+    dest_files_data = [[os.path.join(horizontal_destination, file), os.stat(os.path.join(horizontal_destination, file)).st_size] for file in os.listdir(horizontal_destination)]
     if keep_vertical:
-      dest_files_data += [[vertical_destination + "\\" + file, os.stat(vertical_destination + "\\" + file).st_size] for file in os.listdir(vertical_destination)]
+      dest_files_data += [[os.path.join(vertical_destination, file), os.stat(os.path.join(vertical_destination, file)).st_size] for file in os.listdir(vertical_destination)]
+    dest_files = [os.path.join(horizontal_destination, f) for f in os.listdir(horizontal_destination)] + [os.path.join(vertical_destination, f) for f in os.listdir(vertical_destination)]
     # copy image files
-    with tempfile.TemporaryDirectory() as temp_dir:
-      # first, copy all files from the desktop to a temporary folder for processing and sorting
-      for file in os.listdir(source):
-        source_location = source+"\\"+file
-        if os.stat(source_location).st_size >= min_kb * 1000:
-          shutil.copy(source_location, temp_dir)
-          os.rename(temp_dir+"\\"+file, temp_dir+"\\"+file+".jpg")
-      # rename all temporary files to their proper names
-      for file in os.listdir(temp_dir):
-        file_location = temp_dir+"\\"+file
-        # if the renamed file does not already exist in our permanent folder, copy it there
-        filesize = os.stat(file_location).st_size
+    for file in os.listdir(source):
+      file_location = os.path.join(source, file)
+      # filter for only images of a certain size or higher to avoid pulling in logos
+      if os.stat(file_location).st_size >= MIN_KB * 1000:
         is_duplicate = False
-        epsilon = .1
-        for file_data in dest_files_data:
-          # if file is same size as one in destination folder
-          if file_data[1] == filesize or (file_data[1] >= filesize * (1-epsilon) and file_data[1] <= filesize * (1+epsilon)):
-            # if files are equal, break
-            if filecmp.cmp(file_location, file_data[0]):
-              is_duplicate = True
-              print('Duplicate found! Moving to next file...')
-              break
+        for dest_file in dest_files:
+          # if files are equal, they are duplicates
+          if filecmp.cmp(file_location, dest_file):
+            is_duplicate = True
+            print('Duplicate found! Moving to next file...')
+            break
         # if the file is a duplicate, skip it
         if is_duplicate:
           continue
@@ -61,24 +50,17 @@ def get_images():
         elif keep_vertical:
           orientation = 'vertical'
           file_destination = vertical_destination
-        identifier = ''
-        if keep_vertical and orientation == 'vertical':
-          identifier = '_vert-tag'
-        if rename_images:
-          name = get_image_name(file_location) + identifier + '.jpg'
+        if cfg['rename_images']:
+          name = get_image_name(file_location) + '.jpg'
         else:
           name = file + '.jpg'
-        os.rename(file_location, temp_dir+"\\"+name)
-        shutil.copy(temp_dir + "\\" + name, file_destination)
-        print('New image added to ' + orientation + ' destination folder')
-    print('All images named and copied for user {}'.format(user))
-    # remove vertical identifier tag in the vertical destination folder
-    for v_file in os.listdir(vertical_destination):
-      if v_file[-13:] == "_vert-tag.jpg":
         try:
-          os.rename(vertical_destination+"\\"+v_file, vertical_destination+ "\\" + v_file[0:-13] + ".jpg")
+          shutil.copy(file_location, os.path.join(file_destination, name))
         except FileExistsError:
-          os.remove(vertical_destination + "\\" + v_file)
+          print(f'existing image {name} found in {orientation} destination folder')
+          continue
+        print(f'New image {name} added to {orientation} destination folder')
+  print(f'All images named and copied for user {user}')
   print('opening horizontal destination folder!')
   os.startfile(os.path.realpath(horizontal_destination))
 
@@ -93,15 +75,19 @@ HEADERS = {
             }
 
 def get_image_name(filePath):
-  print('Searching for image title...')
-  searchUrl = 'http://www.google.com/searchbyimage/upload'
-  multipart = {'encoded_image': (filePath, open(filePath, 'rb')), 'image_content': ''}
-  response = requests.post(searchUrl, files=multipart, allow_redirects=False)
-  print('Parsing response...')
-  fetchUrl = response.headers['Location']
-  soup = BeautifulSoup(requests.get(fetchUrl, headers=HEADERS).text, features='html.parser')
-  print('Response parsed! Naming file...')
-  return soup.find('input', title="Search").get('value').title()
+  try:
+    print('Searching for image title...')
+    searchUrl = 'http://www.google.com/searchbyimage/upload'
+    multipart = {'encoded_image': (filePath, open(filePath, 'rb')), 'image_content': ''}
+    response = requests.post(searchUrl, files=multipart, allow_redirects=False)
+    print('Parsing response...')
+    fetchUrl = response.headers['Location']
+    soup = BeautifulSoup(requests.get(fetchUrl, headers=HEADERS).text, features='html.parser')
+    print('Response parsed! Naming file...')
+    return soup.find('input', {'aria-label':"Search"}).get('value').title()
+  except Exception as e:
+    print("error retrieving image name")
+    raise(e)
 
 def getDimension(filename):
    # open image for reading in binary mode
