@@ -1,17 +1,27 @@
 import shutil
 import filecmp
 import os
-import requests
-from bs4 import BeautifulSoup
 from PIL import Image
 import yaml
 from yaml import CLoader as Loader
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+import time
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import tempfile
+import re
 
 with open("config.yml", 'r') as ymlfile:
     cfg = yaml.load(ymlfile, Loader=Loader)
 
 # minimum number of kilobytes a file must be before it is picked up by the scraper
 MIN_KB = 200
+
+OPTIONS = Options()
+OPTIONS.add_argument('--headless=new')
+
 
 def get_images():
   users = cfg['users']
@@ -51,7 +61,15 @@ def get_images():
           orientation = 'vertical'
           file_destination = vertical_destination
         if cfg['rename_images']:
-          name = get_image_name(file_location) + '.jpg'
+          try:
+            name_suggestion = get_image_name(file_location)
+            name = "".join([c for c in name_suggestion if c.isalpha() or c.isdigit() or c==' ']).rstrip()
+            name = re.sub(' +', ' ', name)
+            name += ".jpg"
+          except Exception as e:
+            print('There was an error generating a name suggestion for this image.')
+            print(e)
+            name = file + '.jpg'
         else:
           name = file + '.jpg'
         try:
@@ -64,30 +82,45 @@ def get_images():
   print('opening horizontal destination folder!')
   os.startfile(os.path.realpath(horizontal_destination))
 
-HEADERS = {
-            'Accept': ('text/html,application/xhtml+xml,application/'
-                       'xml;q=0.9,*/*;q=0.8'),
-            'Accept-Encoding': 'gzip;deflate;br',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Upgrade-Insecure-Requests': '1',
-            'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64'
-                           '; rv:67.0) Gecko/20100101 Firefox/67.0')
-            }
 
 def get_image_name(filePath):
+  DRIVER = webdriver.Chrome(os.path.abspath(cfg['chromedriver_abs_path']), options=OPTIONS)
+  # Open the website
+  DRIVER.get('https://images.google.com/')
+
+  # if it shows up, dismiss the sign in to google popup
   try:
-    print('Searching for image title...')
-    searchUrl = 'http://www.google.com/searchbyimage/upload'
-    multipart = {'encoded_image': (filePath, open(filePath, 'rb')), 'image_content': ''}
-    response = requests.post(searchUrl, files=multipart, allow_redirects=False)
-    print('Parsing response...')
-    fetchUrl = response.headers['Location']
-    soup = BeautifulSoup(requests.get(fetchUrl, headers=HEADERS).text, features='html.parser')
-    print('Response parsed! Naming file...')
-    return soup.find('input', {'aria-label':"Search"}).get('value').title()
+    WebDriverWait(DRIVER, 10).until(EC.frame_to_be_available_and_switch_to_it((By.CSS_SELECTOR,"iframe")))
+    WebDriverWait(DRIVER, 10).until(EC.element_to_be_clickable((By.XPATH, '//button[@aria-label=\"No thanks\"]'))).click()
+    DRIVER.switch_to.default_content()
+    time.sleep(.1)
+  except Exception:
+    pass
+
+  # Find cam button
+  WebDriverWait(DRIVER, 10).until(EC.element_to_be_clickable((By.XPATH, "//div[@aria-label=\"Search by image\" and @role=\"button\"]"))).click()
+
+  # Find image input
+  WebDriverWait(DRIVER, 10).until(EC.presence_of_element_located((By.XPATH, "//input[@name=\"encoded_image\"]")))
+  upload_btn = DRIVER.find_element("name", 'encoded_image')
+  # make local file something google can read
+  tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.jpg')
+  tmp.close()
+  shutil.copyfile(filePath, tmp.name)
+  # send it to google (automatically submits when a file is submitted)
+  upload_btn.send_keys(tmp.name)
+
+  WebDriverWait(DRIVER, 10).until(EC.text_to_be_present_in_element((By.CSS_SELECTOR, 'h2'), 'Visual matches'))
+  try:
+    link = DRIVER.find_element(By.CSS_SELECTOR, "c-wiz div[data-is-touch-wrapper=\"true\"] a")
+    print('Lens identified this as a place of interest, using that identification')
+    name = link.get_attribute('aria-label').replace("Search ", "")
   except Exception as e:
-    print("error retrieving image name")
-    raise(e)
+    print('Lens did not have a helpful quick link, using first search option')
+    first_link = DRIVER.find_element('xpath', '//div[@data-card-token=\"0-0\"]')
+    name = first_link.get_attribute('data-item-title')
+  DRIVER.quit()
+  return name
 
 def getDimension(filename):
   im = Image.open(filename)
